@@ -1,38 +1,61 @@
-# AddressID — кликабельный прототип
+# AddressID — clickable prototype
 
-Прототип платформы управления адресами и доступами. **Без backend** — всё
-состояние живёт в памяти браузера (`src/store.tsx`), при перезагрузке сбрасывается
-к сид-данным.
+A two-sided clickable prototype for an address‑permission platform. It shows
+both sides of the product: what a **regular user** sees and what a **partner
+company** sees. **No backend** — all state lives in memory in the browser
+(`src/store.tsx`) and resets to seed data on reload.
 
-## Запуск
+## 🔗 Live demo
+
+**https://hrayr2112.github.io/addressid-prototype/**
+
+Sign in with the demo credentials:
+
+| Role    | Username | Password |
+| ------- | -------- | -------- |
+| User    | `admin`  | `admin`  |
+| Partner | `admin`  | `admin`  |
+
+## What's inside
+
+Intro screen → **Sign in as User** or **Sign in as Partner**.
+
+### User cabinet (`src/UserApp.tsx`)
+- **My Addresses** — active, pending review, and an inactive toggle; "Add
+  address" submits a new one for review (it auto-approves to Active shortly
+  after, then partners can request it by its Address ID).
+- Address detail with linked Accesses; you can deactivate an address (this
+  cascades its Accesses to Inactive and shows up in the partner's Action Required).
+- **Accesses** — grouped by address; detail + activity history; change the
+  address on an Access and the partner is notified.
+- **Notifications** — incoming partner requests with Approve / Decline; on
+  approval you pick an active address of the requested type.
+
+### Partner cabinet (`src/PartnerApp.tsx`)
+- **Overview** — live counters and quick actions.
+- **New Access** — request form (Address ID + name + type) → Pending.
+- **Accesses** — approved accesses with detail + history.
+- **Action Required** — Inactive accesses with Request new Access / Snooze / Close.
+- **Recent Changes** — change feed with unread indicators.
+- **My Account** — brand and managing agent.
+
+### End-to-end flow
+Partner sends a New Access request → the user gets a notification → the user
+approves and picks an address → the Access appears for both sides and lands in
+the partner's Recent Changes.
+
+## Run locally
 
 ```bash
-cd web-prototype
 npm install
 npm run dev      # http://localhost:5173
 ```
 
-## Что внутри
+## Deploy an update
 
-Вступительный экран → вход **как пользователь** или **как партнёр**.
+```bash
+npm run build
+# push the contents of dist/ to the gh-pages branch (served at the URL above)
+```
 
-### Кабинет пользователя (`src/UserApp.tsx`)
-- **Мои адреса** — активные, на рассмотрении, переключатель неактивных; «Добавить адрес» (форма → на рассмотрении).
-- Детали адреса со списком связанных Accesses; можно сделать адрес неактивным (каскадом гасит Accesses).
-- **Accesses** — сгруппированы по адресам; детали + история; смена адреса внутри Access.
-- **Notifications** — запросы доступа от партнёров с «Одобрить / Отклонить»; при одобрении выбор активного адреса нужного типа.
-
-### Кабинет партнёра (`src/PartnerApp.tsx`)
-- **Обзор** — счётчики и быстрые действия.
-- **New Access** — форма (Address ID + имя + тип) → Pending.
-- **Accesses** — одобренные доступы, детали + история.
-- **Action Required** — Inactive-доступы: Request new Access / Snooze / Close Access.
-- **Recent Changes** — лента изменений с unread-индикаторами.
-- **Мой аккаунт** — бренд и агент.
-
-### Сквозной сценарий
-Партнёр отправляет New Access → у пользователя появляется уведомление → он
-одобряет и выбирает адрес → Access появляется у обоих и в Recent Changes партнёра.
-
-Сид-данные (пользователь «Анна Петрова», партнёр «Northwind Logistics», адреса
-`ADR-4821`, `ADR-7390`, `ADR-2255`, …) заданы в `src/store.tsx`.
+Built with Vite + React + TypeScript.
