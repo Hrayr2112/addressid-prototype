@@ -48,9 +48,6 @@ export function App() {
             Sign in as Partner
           </button>
         </div>
-        <div className="intro-foot">
-          No backend · clickable prototype · all data is in-memory
-        </div>
       </div>
     </div>
   )
@@ -128,8 +125,7 @@ function Login({
           </button>
         </form>
         <div className="login-hint">
-          Demo credentials — username <code>admin</code>, password{' '}
-          <code>admin</code>
+          Username <code>admin</code> · password <code>admin</code>
         </div>
         <button className="link-btn" style={{ marginTop: 16 }} onClick={onBack}>
           ← Back
