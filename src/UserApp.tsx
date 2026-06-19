@@ -1,17 +1,27 @@
 import { useMemo, useState } from 'react'
-import { USER_NAME, useStore } from './store'
-import type { Access, Address, AddressType } from './types'
+import {
+  ACCOUNT_PASSWORD,
+  BRAND_NAME,
+  USER_EMAIL,
+  USER_FIRST,
+  USER_ID,
+  USER_LAST,
+  USER_NAME,
+  USER_PHONE,
+  useStore,
+} from './store'
+import type { Access, Address, AddressStatus, AddressType } from './types'
 import {
   AccessStatusBadge,
   AddressStatusBadge,
-  AddressTypeBadge,
   Modal,
+  SharingBadge,
   Timeline,
   formatDate,
   typeLabel,
 } from './ui'
 
-type View = 'addresses' | 'accesses' | 'notifications'
+type View = 'addresses' | 'shared' | 'account'
 
 export function UserApp({ onSignOut }: { onSignOut: () => void }) {
   const store = useStore()
@@ -22,7 +32,8 @@ export function UserApp({ onSignOut }: { onSignOut: () => void }) {
   const [approveReq, setApproveReq] = useState<string | null>(null)
 
   const unreadNotes = store.notifications.filter((n) => !n.read).length
-  const activeAccessCount = store.accesses.filter((a) => !a.closed).length
+  const pendingReqs = store.requests.filter((r) => r.status === 'pending').length
+  const activeShared = store.accesses.filter((a) => a.status === 'active').length
 
   function go(v: View) {
     setView(v)
@@ -44,7 +55,7 @@ export function UserApp({ onSignOut }: { onSignOut: () => void }) {
         <div className="sidebar-brand">
           <img src="./pin.svg" alt="" />
           <div>
-            <div className="name">AddressID</div>
+            <div className="name">{BRAND_NAME}</div>
             <div className="role">{USER_NAME}</div>
           </div>
         </div>
@@ -52,29 +63,29 @@ export function UserApp({ onSignOut }: { onSignOut: () => void }) {
           icon="🏠"
           label="My Addresses"
           active={view === 'addresses' && !openAddress && !openAccess}
+          count={pendingReqs + unreadNotes || undefined}
           onClick={() => go('addresses')}
         />
         <NavItem
           icon="🔗"
-          label="Accesses"
-          active={view === 'accesses'}
-          count={activeAccessCount}
+          label="Shared"
+          active={view === 'shared'}
+          count={activeShared}
           countTone="neutral"
-          onClick={() => go('accesses')}
+          onClick={() => go('shared')}
         />
         <NavItem
-          icon="🔔"
-          label="Notifications"
-          active={view === 'notifications'}
-          count={unreadNotes || undefined}
-          onClick={() => go('notifications')}
+          icon="👤"
+          label="My Account"
+          active={view === 'account'}
+          onClick={() => go('account')}
         />
         <div className="sidebar-foot">
-          <NavItem icon="↩︎" label="Sign out" onClick={onSignOut} />
+          <NavItem icon="↩︎" label="Exit demo" onClick={onSignOut} />
         </div>
       </aside>
 
-      <main className="main">
+      <main className="main wide">
         <div className="screen" key={screenKey}>
           {detailAddress ? (
             <AddressDetail
@@ -82,24 +93,22 @@ export function UserApp({ onSignOut }: { onSignOut: () => void }) {
               onBack={() => setOpenAddress(null)}
               onOpenAccess={(id) => {
                 setOpenAddress(null)
-                setView('accesses')
+                setView('shared')
                 setOpenAccess(id)
               }}
             />
           ) : detailAccess ? (
-            <AccessDetail
-              access={detailAccess}
-              onBack={() => setOpenAccess(null)}
-            />
+            <AccessDetail access={detailAccess} onBack={() => setOpenAccess(null)} />
           ) : view === 'addresses' ? (
-            <AddressesView
+            <Dashboard
               onAdd={() => setShowAddForm(true)}
               onOpen={(id) => setOpenAddress(id)}
+              onApprove={(id) => setApproveReq(id)}
             />
-          ) : view === 'accesses' ? (
-            <AccessesView onOpen={(id) => setOpenAccess(id)} />
+          ) : view === 'shared' ? (
+            <SharedView onOpen={(id) => setOpenAccess(id)} />
           ) : (
-            <NotificationsView onApprove={(id) => setApproveReq(id)} />
+            <AccountView />
           )}
         </div>
       </main>
@@ -109,10 +118,7 @@ export function UserApp({ onSignOut }: { onSignOut: () => void }) {
         <ApproveModal
           requestId={approveReq}
           onClose={() => setApproveReq(null)}
-          onDone={() => {
-            setApproveReq(null)
-            setView('accesses')
-          }}
+          onDone={() => setApproveReq(null)}
         />
       )}
     </div>
@@ -154,76 +160,90 @@ function NavItem({
   )
 }
 
-// ---- Addresses (home) ------------------------------------------------------
+// ---- helpers ---------------------------------------------------------------
 
-function AddressesView({
-  onAdd,
-  onOpen,
-}: {
-  onAdd: () => void
-  onOpen: (id: string) => void
-}) {
-  const store = useStore()
-  const [showInactive, setShowInactive] = useState(false)
+function activeSharedCounts(accesses: Access[], id: string) {
+  return {
+    phys: accesses.filter((a) => a.status === 'active' && a.physicalAddressId === id).length,
+    mail: accesses.filter((a) => a.status === 'active' && a.mailingAddressId === id).length,
+  }
+}
 
-  const active = store.addresses.filter((a) => a.status === 'active')
-  const pending = store.addresses.filter((a) => a.status === 'pending')
-  const inactive = store.addresses.filter((a) => a.status === 'inactive')
-
-  return (
-    <>
-      <div className="page-head row between">
-        <div>
-          <h1>My Addresses</h1>
-          <p>Manage your addresses and who has access to them.</p>
-        </div>
-        <button className="btn primary" onClick={onAdd}>
-          + Add address
-        </button>
-      </div>
-
-      <div className="section-title">Active addresses</div>
-      <div className="grid cols-2">
-        {active.map((a) => (
-          <AddressCard key={a.id} address={a} onOpen={onOpen} />
-        ))}
-      </div>
-
-      <div className="section-title">Pending review</div>
-      {pending.length === 0 ? (
-        <div className="empty">No addresses are awaiting review.</div>
-      ) : (
-        <div className="grid cols-2">
-          {pending.map((a) => (
-            <AddressCard key={a.id} address={a} onOpen={onOpen} />
-          ))}
-        </div>
-      )}
-
-      <div className="section-title row between">
-        <span>Inactive addresses</span>
-        <button className="link-btn" onClick={() => setShowInactive((v) => !v)}>
-          {showInactive ? 'Hide' : `Show (${inactive.length})`}
-        </button>
-      </div>
-      {showInactive &&
-        (inactive.length === 0 ? (
-          <div className="empty">No inactive addresses.</div>
-        ) : (
-          <div className="grid cols-2">
-            {inactive.map((a) => (
-              <AddressCard key={a.id} address={a} onOpen={onOpen} />
-            ))}
-          </div>
-        ))}
-    </>
+function activeOfType(addresses: Address[], need: 'physical' | 'mailing') {
+  return addresses.filter(
+    (a) => a.status === 'active' && (a.type === need || a.type === 'both'),
   )
 }
 
-function accessesForAddress(accesses: Access[], addressId: string) {
-  return accesses.filter(
-    (acc) =>
-      acc.physicalAddressId === addressId || acc.mailingAddressId === addressId,
+// ---- Dashboard (My Addresses) ---------------------------------------------
+
+function Dashboard({
+  onAdd,
+  onOpen,
+  onApprove,
+}: {
+  onAdd: () => void
+  onOpen: (id: string) => void
+  onApprove: (id: string) => void
+}) {
+  const store = useStore()
+  const [filter, setFilter] = useState<AddressStatus>('active')
+
+  const counts = {
+    active: store.addresses.filter((a) => a.status === 'active').length,
+    pending: store.addresses.filter((a) => a.status === 'pending').length,
+    inactive: store.addresses.filter((a) => a.status === 'inactive').length,
+  }
+  const list = store.addresses.filter((a) => a.status === filter)
+
+  return (
+    <>
+      <div className="page-head">
+        <h1>My Addresses</h1>
+        <p>Manage your addresses and the access you grant to organizations.</p>
+      </div>
+
+      <div className="dash">
+        {/* LEFT — addresses */}
+        <div className="dash-left">
+          <div className="row between" style={{ marginBottom: 14 }}>
+            <div className="seg-toggle">
+              {(['active', 'pending', 'inactive'] as AddressStatus[]).map((s) => (
+                <button
+                  key={s}
+                  className={filter === s ? 'on' : ''}
+                  onClick={() => setFilter(s)}
+                >
+                  {s[0].toUpperCase() + s.slice(1)}
+                  {s === 'pending' && counts.pending > 0 && (
+                    <span className="pill-count">{counts.pending}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <button className="btn primary sm" onClick={onAdd}>
+              + Add
+            </button>
+          </div>
+
+          {list.length === 0 ? (
+            <div className="empty">No {filter} addresses.</div>
+          ) : (
+            <div className="stack" style={{ gap: 14 }}>
+              {list.map((a) => (
+                <AddressCard key={a.id} address={a} onOpen={onOpen} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT — requests + notifications */}
+        <div className="dash-right">
+          <RequestsPanel onApprove={onApprove} />
+          <NotificationsPanel />
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -235,33 +255,120 @@ function AddressCard({
   onOpen: (id: string) => void
 }) {
   const store = useStore()
-  const linked = accessesForAddress(store.accesses, address.id)
+  const { phys, mail } = activeSharedCounts(store.accesses, address.id)
   return (
     <div className="card clickable" onClick={() => onOpen(address.id)}>
       <div className="row between">
-        <span className="addr-id">{address.id}</span>
+        <div className="addr-line" style={{ marginTop: 0 }}>
+          {address.line}
+        </div>
         <AddressStatusBadge status={address.status} />
       </div>
-      <div className="addr-line">{address.line}</div>
       <div className="addr-sub">
         {address.city}, {address.state} {address.zip}
       </div>
       <div className="divider" />
-      <div className="row between">
-        <AddressTypeBadge type={address.type} />
-        <span className="muted" style={{ fontSize: 13 }}>
-          {linked.length} access{linked.length === 1 ? '' : 'es'}
-        </span>
+      <div className="row wrap" style={{ gap: 8 }}>
+        {(address.type === 'physical' || address.type === 'both') && (
+          <span className="type-chip">
+            Physical <span className="chip-count">{phys} shared</span>
+          </span>
+        )}
+        {(address.type === 'mailing' || address.type === 'both') && (
+          <span className="type-chip">
+            Mailing <span className="chip-count">{mail} shared</span>
+          </span>
+        )}
       </div>
-      {linked.length > 0 && (
-        <div className="stack" style={{ gap: 6, marginTop: 12 }}>
-          {linked.map((acc) => (
-            <div className="access-mini" key={acc.id}>
-              <span style={{ fontWeight: 600 }}>{acc.partnerName}</span>
-              <span className="muted">· {typeLabel(acc.requestType)}</span>
-              <span style={{ marginLeft: 'auto' }}>
-                <AccessStatusBadge status={acc.status} />
-              </span>
+    </div>
+  )
+}
+
+function RequestsPanel({ onApprove }: { onApprove: (id: string) => void }) {
+  const store = useStore()
+  const pending = store.requests.filter((r) => r.status === 'pending')
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <span>Requests</span>
+        {pending.length > 0 && <span className="pill-count">{pending.length}</span>}
+      </div>
+      {pending.length === 0 ? (
+        <div className="panel-empty">No requests from organizations.</div>
+      ) : (
+        <div className="stack" style={{ gap: 12 }}>
+          {pending.map((r) => (
+            <div className="req-item" key={r.id}>
+              <div className="stack" style={{ gap: 2 }}>
+                <strong>{r.orgName}</strong>
+                <span className="muted" style={{ fontSize: 13 }}>
+                  Requests <strong>{typeLabel(r.requestType)}</strong> ·{' '}
+                  {formatDate(r.sentAt)}
+                </span>
+              </div>
+              <p className="muted" style={{ fontSize: 12.5, margin: '4px 0 8px' }}>
+                This sharing is permanent and the organization always sees its
+                current status.
+              </p>
+              <div className="row">
+                <button className="btn success sm" onClick={() => onApprove(r.id)}>
+                  Approve
+                </button>
+                <button
+                  className="btn danger sm"
+                  onClick={() => store.rejectRequest(r.id)}
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NotificationsPanel() {
+  const store = useStore()
+  const unread = store.notifications.filter((n) => !n.read).length
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <span>Notifications</span>
+        {unread > 0 && <span className="pill-count">{unread}</span>}
+        {unread > 0 && (
+          <button
+            className="link-btn"
+            style={{ marginLeft: 'auto', fontSize: 13 }}
+            onClick={store.markAllNotificationsRead}
+          >
+            Mark all read
+          </button>
+        )}
+      </div>
+      {store.notifications.length === 0 ? (
+        <div className="panel-empty">No recent activity.</div>
+      ) : (
+        <div className="stack" style={{ gap: 10 }}>
+          {store.notifications.map((n) => (
+            <div
+              key={n.id}
+              className={`notif ${n.read ? '' : 'unread'}`}
+              onClick={() => store.markNotificationRead(n.id)}
+            >
+              {!n.read && <div className="unread-dot" />}
+              <div style={{ flex: 1 }}>
+                <div className="row between">
+                  <strong style={{ fontSize: 14 }}>{n.title}</strong>
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {formatDate(n.date)}
+                  </span>
+                </div>
+                <div className="addr-sub" style={{ marginTop: 2 }}>
+                  {n.body}
+                </div>
+              </div>
             </div>
           ))}
         </div>
@@ -282,7 +389,16 @@ function AddressDetail({
   onOpenAccess: (id: string) => void
 }) {
   const store = useStore()
-  const linked = accessesForAddress(store.accesses, address.id)
+  const [manage, setManage] = useState<Access | null>(null)
+  const [deactivate, setDeactivate] = useState(false)
+
+  const sharedTo = store.accesses.filter(
+    (acc) =>
+      acc.status === 'active' &&
+      (acc.physicalAddressId === address.id || acc.mailingAddressId === address.id),
+  )
+  const previous = store.previousSharings.filter((p) => p.addressId === address.id)
+
   return (
     <>
       <button className="back-link" onClick={onBack}>
@@ -290,19 +406,16 @@ function AddressDetail({
       </button>
       <div className="card">
         <div className="row between">
-          <span className="addr-id">{address.id}</span>
+          <div className="addr-line" style={{ fontSize: 20, marginTop: 0 }}>
+            {address.line}
+          </div>
           <AddressStatusBadge status={address.status} />
-        </div>
-        <div className="addr-line" style={{ fontSize: 20 }}>
-          {address.line}
         </div>
         <div className="addr-sub">
           {address.city}, {address.state} {address.zip}
         </div>
         <div className="divider" />
         <div className="kv">
-          <span className="k">Address ID</span>
-          <span className="v">{address.id}</span>
           <span className="k">Address type</span>
           <span className="v">{typeLabel(address.type)}</span>
           <span className="k">Status</span>
@@ -313,59 +426,252 @@ function AddressDetail({
         {address.status === 'active' && (
           <>
             <div className="divider" />
-            <button
-              className="btn danger sm"
-              onClick={() => {
-                if (
-                  confirm(
-                    'Deactivate this address? Linked Accesses will become Inactive and partners will see it in Action Required.',
-                  )
-                )
-                  store.deactivateAddress(address.id)
-              }}
-            >
+            <button className="btn danger sm" onClick={() => setDeactivate(true)}>
               Deactivate
             </button>
           </>
         )}
       </div>
 
-      <div className="section-title">Accesses for this address</div>
-      {linked.length === 0 ? (
-        <div className="empty">No accesses are linked to this address yet.</div>
+      <div className="section-title">Shared to</div>
+      {sharedTo.length === 0 ? (
+        <div className="empty">This address is not shared with anyone.</div>
       ) : (
         <div className="grid">
-          {linked.map((acc) => (
-            <div
-              className="card clickable"
-              key={acc.id}
-              onClick={() => onOpenAccess(acc.id)}
-            >
+          {sharedTo.map((acc) => (
+            <div className="card" key={acc.id}>
               <div className="row between">
-                <div className="stack">
-                  <strong>{acc.partnerName}</strong>
+                <div
+                  className="stack"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => onOpenAccess(acc.id)}
+                >
+                  <strong>{acc.orgName}</strong>
                   <span className="muted" style={{ fontSize: 13 }}>
                     {typeLabel(acc.requestType)} · since {formatDate(acc.createdAt)}
                   </span>
                 </div>
-                <AccessStatusBadge status={acc.status} />
+                <div className="row" style={{ gap: 10 }}>
+                  <SharingBadge />
+                  <button className="btn ghost sm" onClick={() => setManage(acc)}>
+                    Stop / Change
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      <div className="section-title">Previous sharing</div>
+      {previous.length === 0 ? (
+        <div className="empty">No previous sharing for this address.</div>
+      ) : (
+        <div className="grid">
+          {previous.map((p) => (
+            <div className="card muted-card" key={p.id}>
+              <div className="row between">
+                <div className="stack">
+                  <strong>{p.orgName}</strong>
+                  <span className="muted" style={{ fontSize: 13 }}>
+                    {typeLabel(p.requestType)} · {reasonLabel(p.reason)} ·{' '}
+                    {formatDate(p.date)}
+                  </span>
+                </div>
+                <span className="badge gray">Ended</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {manage && (
+        <ManageSharingModal access={manage} onClose={() => setManage(null)} />
+      )}
+      {deactivate && (
+        <DeactivateModal address={address} onClose={() => setDeactivate(false)} />
+      )}
     </>
   )
 }
 
-// ---- Accesses --------------------------------------------------------------
+function reasonLabel(r: 'stopped' | 'changed' | 'deactivated') {
+  if (r === 'stopped') return 'stopped by you'
+  if (r === 'changed') return 'moved to another address'
+  return 'address deactivated'
+}
 
-function AccessesView({ onOpen }: { onOpen: (id: string) => void }) {
+// ---- Manage sharing (Stop / Change) ---------------------------------------
+
+function ManageSharingModal({
+  access,
+  onClose,
+}: {
+  access: Access
+  onClose: () => void
+}) {
   const store = useStore()
-  // group accesses by their primary (physical, else mailing) address
+  const [mode, setMode] = useState<'menu' | 'change'>('menu')
+  const needPhys = access.requestType !== 'mailing'
+  const needMail = access.requestType !== 'physical'
+  const physOptions = activeOfType(store.addresses, 'physical')
+  const mailOptions = activeOfType(store.addresses, 'mailing')
+  const [phys, setPhys] = useState(access.physicalAddressId ?? physOptions[0]?.id ?? '')
+  const [mail, setMail] = useState(access.mailingAddressId ?? mailOptions[0]?.id ?? '')
+
+  return (
+    <Modal
+      title="Manage sharing"
+      subtitle={`${access.orgName} · ${typeLabel(access.requestType)}`}
+      onClose={onClose}
+    >
+      {mode === 'menu' ? (
+        <div className="stack" style={{ gap: 12 }}>
+          <button
+            className="choice"
+            onClick={() => {
+              store.stopSharing(access.id)
+              onClose()
+            }}
+          >
+            <span className="choice-title">Stop sharing</span>
+            <span className="choice-desc">
+              End this sharing. It will move to Previous sharing.
+            </span>
+          </button>
+          <button className="choice" onClick={() => setMode('change')}>
+            <span className="choice-title">Change to another address</span>
+            <span className="choice-desc">
+              Switch this sharing to a different active address. The organization
+              sees the update automatically.
+            </span>
+          </button>
+          <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <button className="btn ghost" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {needPhys && (
+            <div className="field">
+              <label>Physical address</label>
+              <select value={phys} onChange={(e) => setPhys(e.target.value)}>
+                {physOptions.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.line} — {a.city}, {a.state}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {needMail && (
+            <div className="field">
+              <label>Mailing address</label>
+              <select value={mail} onChange={(e) => setMail(e.target.value)}>
+                {mailOptions.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.line} — {a.city}, {a.state}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <button className="btn ghost" onClick={() => setMode('menu')}>
+              Back
+            </button>
+            <button
+              className="btn primary"
+              onClick={() => {
+                store.changeSharingAddress(access.id, {
+                  physicalAddressId: needPhys ? phys : undefined,
+                  mailingAddressId: needMail ? mail : undefined,
+                })
+                onClose()
+              }}
+            >
+              Save change
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
+  )
+}
+
+// ---- Deactivate (with password confirmation) ------------------------------
+
+function DeactivateModal({
+  address,
+  onClose,
+}: {
+  address: Address
+  onClose: () => void
+}) {
+  const store = useStore()
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState(false)
+  return (
+    <Modal title="Deactivate this address?" onClose={onClose}>
+      <div className="banner amber" style={{ marginBottom: 16 }}>
+        <span>⚠️</span>
+        <span>
+          This cannot be undone. This exact address and its previous connections
+          cannot be restored. If you want to use this address again later, you
+          will have to register it from scratch.
+        </span>
+      </div>
+      <div className="field">
+        <label>Confirm with your account password</label>
+        <input
+          type="password"
+          value={password}
+          autoFocus
+          onChange={(e) => {
+            setPassword(e.target.value)
+            setError(false)
+          }}
+          placeholder="account password"
+        />
+      </div>
+      {error && (
+        <div className="login-error">Incorrect password.</div>
+      )}
+      <div className="login-hint" style={{ marginTop: 0, marginBottom: 14 }}>
+        Demo account password: <code>{ACCOUNT_PASSWORD}</code>
+      </div>
+      <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <button className="btn ghost" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          className="btn danger"
+          onClick={() => {
+            if (password === ACCOUNT_PASSWORD) {
+              store.deactivateAddress(address.id)
+              onClose()
+            } else {
+              setError(true)
+            }
+          }}
+        >
+          Deactivate permanently
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+// ---- Shared view -----------------------------------------------------------
+
+function SharedView({ onOpen }: { onOpen: (id: string) => void }) {
+  const store = useStore()
   const groups = useMemo(() => {
     const map = new Map<string, Access[]>()
     for (const acc of store.accesses) {
+      if (acc.status !== 'active') continue
       const key = acc.physicalAddressId ?? acc.mailingAddressId ?? 'unknown'
       const list = map.get(key) ?? []
       list.push(acc)
@@ -377,70 +683,55 @@ function AccessesView({ onOpen }: { onOpen: (id: string) => void }) {
   return (
     <>
       <div className="page-head">
-        <h1>Accesses</h1>
-        <p>Every partner connection, grouped by address.</p>
+        <h1>Shared</h1>
+        <p>Your current active sharing, grouped by address.</p>
       </div>
-      {groups.map(([addrId, list]) => {
-        const addr = store.addressById(addrId)
-        return (
-          <div key={addrId}>
-            <div className="section-title">
-              {addr ? `${addr.id} · ${addr.line}` : addrId}
-            </div>
-            <div className="grid">
-              {list.map((acc) => (
-                <div
-                  className="card clickable"
-                  key={acc.id}
-                  onClick={() => onOpen(acc.id)}
-                >
-                  <div className="row between">
-                    <div className="stack">
-                      <strong>{acc.partnerName}</strong>
-                      <span className="muted" style={{ fontSize: 13 }}>
-                        {typeLabel(acc.requestType)} · created{' '}
-                        {formatDate(acc.createdAt)}
-                      </span>
+      {groups.length === 0 ? (
+        <div className="empty">You are not sharing any address right now.</div>
+      ) : (
+        groups.map(([addrId, list]) => {
+          const addr = store.addressById(addrId)
+          return (
+            <div key={addrId}>
+              <div className="section-title">{addr ? addr.line : addrId}</div>
+              <div className="grid">
+                {list.map((acc) => (
+                  <div className="card clickable" key={acc.id} onClick={() => onOpen(acc.id)}>
+                    <div className="row between">
+                      <div className="stack">
+                        <strong>{acc.orgName}</strong>
+                        <span className="muted" style={{ fontSize: 13 }}>
+                          {typeLabel(acc.requestType)} · since{' '}
+                          {formatDate(acc.createdAt)}
+                        </span>
+                      </div>
+                      <SharingBadge />
                     </div>
-                    <AccessStatusBadge status={acc.status} />
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )
-      })}
+          )
+        })
+      )}
     </>
   )
 }
 
 // ---- Access detail ---------------------------------------------------------
 
-function AccessDetail({
-  access,
-  onBack,
-}: {
-  access: Access
-  onBack: () => void
-}) {
+function AccessDetail({ access, onBack }: { access: Access; onBack: () => void }) {
   const store = useStore()
-  const [changing, setChanging] = useState(false)
   const physical = store.addressById(access.physicalAddressId)
   const mailing = store.addressById(access.mailingAddressId)
-
   return (
     <>
       <button className="back-link" onClick={onBack}>
-        ← Back to Accesses
+        ← Back to Shared
       </button>
       <div className="card">
         <div className="row between">
-          <div className="stack">
-            <h2 style={{ fontSize: 20 }}>{access.partnerName}</h2>
-            <span className="muted" style={{ fontSize: 13 }}>
-              {access.id}
-            </span>
-          </div>
+          <h2 style={{ fontSize: 20 }}>{access.orgName}</h2>
           <AccessStatusBadge status={access.status} />
         </div>
         <div className="divider" />
@@ -450,44 +741,23 @@ function AccessDetail({
           {physical && (
             <>
               <span className="k">Physical address</span>
-              <span className="v">
-                {physical.id} · {physical.line}
-              </span>
+              <span className="v">{physical.line}</span>
             </>
           )}
           {mailing && (
             <>
               <span className="k">Mailing address</span>
-              <span className="v">
-                {mailing.id} · {mailing.line}
-              </span>
+              <span className="v">{mailing.line}</span>
             </>
           )}
-          <span className="k">Created</span>
+          <span className="k">Sharing since</span>
           <span className="v">{formatDate(access.createdAt)}</span>
         </div>
-        {!access.closed && (
-          <>
-            <div className="divider" />
-            <button className="btn ghost sm" onClick={() => setChanging(true)}>
-              Change address
-            </button>
-            <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>
-              Switch to another active address and the partner sees the update
-              automatically.
-            </p>
-          </>
-        )}
       </div>
-
       <div className="section-title">Activity history</div>
       <div className="card">
         <Timeline items={access.history} />
       </div>
-
-      {changing && (
-        <ChangeAddressModal access={access} onClose={() => setChanging(false)} />
-      )}
     </>
   )
 }
@@ -500,8 +770,11 @@ function AddAddressModal({ onClose }: { onClose: () => void }) {
   const [city, setCity] = useState('')
   const [state, setState] = useState('')
   const [zip, setZip] = useState('')
-  const [type, setType] = useState<AddressType>('both')
-  const valid = line && city && state && zip
+  const [physical, setPhysical] = useState(true)
+  const [mailing, setMailing] = useState(true)
+  const valid = line && city && state && zip && (physical || mailing)
+  const type: AddressType =
+    physical && mailing ? 'both' : physical ? 'physical' : 'mailing'
 
   return (
     <Modal
@@ -524,12 +797,7 @@ function AddAddressModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="field">
           <label>State</label>
-          <input
-            value={state}
-            onChange={(e) => setState(e.target.value)}
-            maxLength={2}
-            placeholder="IL"
-          />
+          <input value={state} onChange={(e) => setState(e.target.value)} maxLength={2} placeholder="IL" />
         </div>
         <div className="field">
           <label>ZIP</label>
@@ -538,16 +806,9 @@ function AddAddressModal({ onClose }: { onClose: () => void }) {
       </div>
       <div className="field">
         <label>Address type</label>
-        <div className="seg">
-          {(['physical', 'mailing', 'both'] as AddressType[]).map((t) => (
-            <button
-              key={t}
-              className={type === t ? 'on' : ''}
-              onClick={() => setType(t)}
-            >
-              {typeLabel(t)}
-            </button>
-          ))}
+        <div className="check-row">
+          <Checkbox checked={physical} onChange={setPhysical} label="Physical" />
+          <Checkbox checked={mailing} onChange={setMailing} label="Mailing" />
         </div>
       </div>
       <div className="row" style={{ marginTop: 8, justifyContent: 'flex-end' }}>
@@ -569,13 +830,25 @@ function AddAddressModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-// ---- Approve request modal -------------------------------------------------
-
-function activeOfType(addresses: Address[], need: 'physical' | 'mailing') {
-  return addresses.filter(
-    (a) => a.status === 'active' && (a.type === need || a.type === 'both'),
+export function Checkbox({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean
+  onChange: (v: boolean) => void
+  label: string
+}) {
+  return (
+    <label className={`checkbox ${checked ? 'on' : ''}`}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span className="box">{checked ? '✓' : ''}</span>
+      {label}
+    </label>
   )
 }
+
+// ---- Approve request modal -------------------------------------------------
 
 function ApproveModal({
   requestId,
@@ -592,7 +865,6 @@ function ApproveModal({
   const mailOptions = activeOfType(store.addresses, 'mailing')
   const [phys, setPhys] = useState(physOptions[0]?.id ?? '')
   const [mail, setMail] = useState(mailOptions[0]?.id ?? '')
-
   if (!req) return null
   const needPhys = req.requestType !== 'mailing'
   const needMail = req.requestType !== 'physical'
@@ -600,8 +872,8 @@ function ApproveModal({
 
   return (
     <Modal
-      title="Approve Access request"
-      subtitle={`${req.partnerName} is requesting ${typeLabel(req.requestType)}. Pick an active address.`}
+      title="Approve request"
+      subtitle={`${req.orgName} requests ${typeLabel(req.requestType)}. Pick an active address.`}
       onClose={onClose}
     >
       {needPhys && (
@@ -610,7 +882,7 @@ function ApproveModal({
           <select value={phys} onChange={(e) => setPhys(e.target.value)}>
             {physOptions.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.id} — {a.line}
+                {a.line} — {a.city}, {a.state}
               </option>
             ))}
           </select>
@@ -622,19 +894,12 @@ function ApproveModal({
           <select value={mail} onChange={(e) => setMail(e.target.value)}>
             {mailOptions.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.id} — {a.line}
+                {a.line} — {a.city}, {a.state}
               </option>
             ))}
           </select>
         </div>
       )}
-      <div className="banner violet" style={{ marginTop: 4 }}>
-        <span>ℹ️</span>
-        <span>
-          This Access is permanent, and the partner will always see its current
-          status.
-        </span>
-      </div>
       <div className="row" style={{ justifyContent: 'flex-end' }}>
         <button className="btn ghost" onClick={onClose}>
           Cancel
@@ -657,176 +922,30 @@ function ApproveModal({
   )
 }
 
-// ---- Change address modal --------------------------------------------------
+// ---- My Account ------------------------------------------------------------
 
-function ChangeAddressModal({
-  access,
-  onClose,
-}: {
-  access: Access
-  onClose: () => void
-}) {
-  const store = useStore()
-  const needPhys = access.requestType !== 'mailing'
-  const needMail = access.requestType !== 'physical'
-  const physOptions = activeOfType(store.addresses, 'physical')
-  const mailOptions = activeOfType(store.addresses, 'mailing')
-  const [phys, setPhys] = useState(
-    access.physicalAddressId ?? physOptions[0]?.id ?? '',
-  )
-  const [mail, setMail] = useState(
-    access.mailingAddressId ?? mailOptions[0]?.id ?? '',
-  )
-
-  return (
-    <Modal
-      title="Change address"
-      subtitle="Pick another active address. The partner will be notified."
-      onClose={onClose}
-    >
-      {needPhys && (
-        <div className="field">
-          <label>Physical address</label>
-          <select value={phys} onChange={(e) => setPhys(e.target.value)}>
-            {physOptions.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.id} — {a.line}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      {needMail && (
-        <div className="field">
-          <label>Mailing address</label>
-          <select value={mail} onChange={(e) => setMail(e.target.value)}>
-            {mailOptions.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.id} — {a.line}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      <div className="row" style={{ justifyContent: 'flex-end' }}>
-        <button className="btn ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button
-          className="btn primary"
-          onClick={() => {
-            store.changeAccessAddress(access.id, {
-              physicalAddressId: needPhys ? phys : undefined,
-              mailingAddressId: needMail ? mail : undefined,
-            })
-            onClose()
-          }}
-        >
-          Save
-        </button>
-      </div>
-    </Modal>
-  )
-}
-
-// ---- Notifications ---------------------------------------------------------
-
-function NotificationsView({
-  onApprove,
-}: {
-  onApprove: (requestId: string) => void
-}) {
-  const store = useStore()
-
+function AccountView() {
   return (
     <>
-      <div className="page-head row between">
-        <div>
-          <h1>Notifications</h1>
-          <p>Access requests and changes to your Accesses.</p>
-        </div>
-        {store.notifications.some((n) => !n.read) && (
-          <button className="link-btn" onClick={store.markAllNotificationsRead}>
-            Mark all as read
-          </button>
-        )}
+      <div className="page-head">
+        <h1>My Account</h1>
+        <p>Your profile details.</p>
       </div>
-      <div className="grid">
-        {store.notifications.length === 0 && (
-          <div className="empty">No notifications.</div>
-        )}
-        {store.notifications.map((n) => {
-          const req = n.requestId
-            ? store.requests.find((r) => r.id === n.requestId)
-            : undefined
-          const pending = req?.status === 'pending'
-          return (
-            <div
-              key={n.id}
-              className={`notif ${n.read ? '' : 'unread'}`}
-              onClick={() => store.markNotificationRead(n.id)}
-            >
-              {!n.read && <div className="unread-dot" />}
-              <div style={{ flex: 1 }}>
-                <div className="row between">
-                  <strong>{n.title}</strong>
-                  <span className="muted" style={{ fontSize: 12.5 }}>
-                    {formatDate(n.date)}
-                  </span>
-                </div>
-                <div className="addr-sub" style={{ marginTop: 4 }}>
-                  {n.body}
-                </div>
-                {pending && req && (
-                  <>
-                    <div
-                      className="banner violet"
-                      style={{
-                        marginTop: 12,
-                        marginBottom: 12,
-                        flexDirection: 'column',
-                        gap: 4,
-                      }}
-                    >
-                      <span>
-                        Requested: <strong>{typeLabel(req.requestType)}</strong>
-                      </span>
-                      <span style={{ fontSize: 13 }}>
-                        This Access is permanent. The partner will always see its
-                        current status.
-                      </span>
-                    </div>
-                    <div className="row">
-                      <button
-                        className="btn success sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onApprove(req.id)
-                        }}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        className="btn danger sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          store.rejectRequest(req.id)
-                        }}
-                      >
-                        Decline
-                      </button>
-                    </div>
-                  </>
-                )}
-                {req && req.status === 'rejected' && (
-                  <div className="tag" style={{ marginTop: 10 }}>
-                    Declined
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
+      <div className="card">
+        <div className="kv">
+          <span className="k">User ID</span>
+          <span className="v">{USER_ID}</span>
+          <span className="k">First name</span>
+          <span className="v">{USER_FIRST}</span>
+          <span className="k">Last name</span>
+          <span className="v">{USER_LAST}</span>
+          <span className="k">Email</span>
+          <span className="v">{USER_EMAIL}</span>
+          <span className="k">Phone number</span>
+          <span className="v">{USER_PHONE}</span>
+        </div>
+        <div className="divider" />
+        <button className="btn ghost sm">Settings</button>
       </div>
     </>
   )

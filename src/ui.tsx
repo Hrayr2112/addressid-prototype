@@ -22,16 +22,19 @@ export function AddressTypeBadge({ type }: { type: AddressType }) {
 export function AddressStatusBadge({ status }: { status: AddressStatus }) {
   if (status === 'active') return <span className="badge green">Active</span>
   if (status === 'pending')
-    return <span className="badge amber">Pending review</span>
+    return <span className="badge amber">Pending</span>
   return <span className="badge gray">Inactive</span>
 }
 
+export function SharingBadge() {
+  return <span className="badge green">Sharing</span>
+}
+
 export function AccessStatusBadge({ status }: { status: AccessStatus }) {
-  return status === 'active' ? (
-    <span className="badge green">Active</span>
-  ) : (
-    <span className="badge red">Inactive</span>
-  )
+  if (status === 'active') return <span className="badge green">Sharing</span>
+  if (status === 'inactive') return <span className="badge red">Inactive</span>
+  if (status === 'stopped') return <span className="badge gray">Stopped</span>
+  return <span className="badge gray">Closed</span>
 }
 
 export function Modal({

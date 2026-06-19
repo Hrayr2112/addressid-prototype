@@ -1,12 +1,12 @@
-// Domain types for the clickable prototype.
-// Everything lives in memory — no backend, no persistence.
+// Domain types for the DeMo clickable demonstration.
+// Everything lives in memory — resets to seed data on reload.
 
 export type AddressType = 'physical' | 'mailing' | 'both'
 
 export type AddressStatus = 'active' | 'pending' | 'inactive'
 
 export interface Address {
-  id: string // Address ID, e.g. "ADR-4821"
+  id: string // internal id (no longer shown in the UI)
   line: string
   city: string
   state: string
@@ -15,55 +15,66 @@ export interface Address {
   status: AddressStatus
 }
 
-export type AccessStatus = 'active' | 'inactive'
+// active   = currently sharing
+// inactive = the underlying address was deactivated (organization sees last known)
+// stopped  = the user stopped this sharing
+// closed   = the organization closed it
+export type AccessStatus = 'active' | 'inactive' | 'stopped' | 'closed'
 
 export interface HistoryEvent {
   id: string
-  date: string // ISO date
-  type: string // e.g. "Access approved"
-  status?: string // e.g. "Active"
+  date: string
+  type: string
+  status?: string
 }
 
-// An approved connection between a partner and the user, for one address.
+// A sharing connection between an organization and the user, for one address.
 export interface Access {
-  id: string // user-facing access id
-  partnerName: string
-  personName: string // the user's name, as the partner sees it
-  partnerInternalUserId: string // "our internal user id" shown to the partner
-  requestType: AddressType // what was requested
-  // Approved address(es). For "both" the same or two different addresses.
+  id: string
+  orgName: string
+  personName: string
+  orgInternalUserId: string // the organization's internal id for this person
+  requestType: AddressType
   physicalAddressId?: string
   mailingAddressId?: string
   status: AccessStatus
   createdAt: string
   history: HistoryEvent[]
   snoozedUntil?: string | null
-  closed?: boolean
 }
 
-// A request created by the partner, waiting for the user to approve/reject.
+// A request created by an organization, waiting for the user to approve/reject.
 export interface AccessRequest {
   id: string
-  partnerName: string
+  orgName: string
   firstName: string
   lastName: string
-  addressId: string
+  userId: string
   requestType: AddressType
   status: 'pending' | 'approved' | 'rejected'
   sentAt: string
 }
 
+// A finished sharing relationship for a given address, shown under
+// "Previous sharing" in the address detail.
+export interface PreviousSharing {
+  id: string
+  addressId: string
+  orgName: string
+  requestType: AddressType
+  date: string
+  reason: 'stopped' | 'changed' | 'deactivated'
+}
+
 export interface UserNotification {
   id: string
-  kind: 'access_request' | 'access_change'
-  requestId?: string
   title: string
   body: string
   date: string
   read: boolean
 }
 
-export interface PartnerChange {
+export interface OrgChange {
   id: string
   text: string
   date: string

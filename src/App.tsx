@@ -1,135 +1,65 @@
 import { useState } from 'react'
 import { UserApp } from './UserApp'
-import { PartnerApp } from './PartnerApp'
+import { OrgApp } from './PartnerApp'
+import { BRAND_NAME } from './store'
 
-type Stage = 'intro' | 'login-user' | 'login-partner' | 'user' | 'partner'
+type Stage = 'intro' | 'user' | 'organization'
 
 export function App() {
   const [stage, setStage] = useState<Stage>('intro')
 
   if (stage === 'user') return <UserApp onSignOut={() => setStage('intro')} />
-  if (stage === 'partner')
-    return <PartnerApp onSignOut={() => setStage('intro')} />
-
-  if (stage === 'login-user' || stage === 'login-partner') {
-    const role = stage === 'login-user' ? 'user' : 'partner'
-    return (
-      <Login
-        role={role}
-        onBack={() => setStage('intro')}
-        onSuccess={() => setStage(role)}
-      />
-    )
-  }
+  if (stage === 'organization')
+    return <OrgApp onSignOut={() => setStage('intro')} />
 
   return (
     <div className="intro">
-      <div className="intro-card pop-in">
+      <div className="intro-wrap pop-in">
         <span className="brand-pill">
-          <img src="./pin.svg" width={18} height={18} alt="" /> AddressID
+          <img src="./pin.svg" width={18} height={18} alt="" /> {BRAND_NAME}
         </span>
-        <h1>Your address, finally under your control.</h1>
-        <p>
-          Stop pasting your home address into every form. AddressID turns it into
-          a permission you grant — share once, update anywhere, and revoke in a
-          tap. Partners always see the address that's current, never a stale one.
+        <h1 className="intro-title">A demonstration of {BRAND_NAME}</h1>
+        <p className="intro-text">
+          This is a demonstration version created to visually show interested
+          parties how the user-facing part of the platform may look.
         </p>
-        <div className="intro-actions">
+        <p className="intro-text">
+          This demo is intended only to demonstrate the practical use of the
+          solution and the general user flow. For confidentiality reasons,
+          sensitive technical and patent-related details are not shown here,
+          including methods of reliable address verification and mechanisms that
+          help protect address information from unauthorized use.
+        </p>
+        <p className="intro-text strong">
+          You can continue in one of two demonstration modes:
+        </p>
+
+        <div className="mode-panels">
           <button
-            className="btn primary block"
-            onClick={() => setStage('login-user')}
+            className="mode-panel user"
+            onClick={() => setStage('user')}
           >
-            Sign in as User
+            <span className="mode-icon">👤</span>
+            <span className="mode-title">User account</span>
+            <span className="mode-desc">
+              To see how an individual manages addresses and access permissions.
+            </span>
+            <span className="mode-cta">Enter as user →</span>
           </button>
+
           <button
-            className="btn ghost block"
-            onClick={() => setStage('login-partner')}
+            className="mode-panel org"
+            onClick={() => setStage('organization')}
           >
-            Sign in as Partner
+            <span className="mode-icon">🏢</span>
+            <span className="mode-title">Organization account</span>
+            <span className="mode-desc">
+              To see how an organization requests and uses approved access to
+              address information.
+            </span>
+            <span className="mode-cta">Enter as organization →</span>
           </button>
         </div>
-      </div>
-    </div>
-  )
-}
-
-function Login({
-  role,
-  onBack,
-  onSuccess,
-}: {
-  role: 'user' | 'partner'
-  onBack: () => void
-  onSuccess: () => void
-}) {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState(false)
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (username.trim() === 'admin' && password === 'admin') {
-      onSuccess()
-    } else {
-      setError(true)
-    }
-  }
-
-  return (
-    <div className="intro">
-      <div className="intro-card login-card pop-in">
-        <span className="brand-pill">
-          <img src="./pin.svg" width={18} height={18} alt="" /> AddressID
-        </span>
-        <h1 style={{ fontSize: 24 }}>
-          {role === 'user' ? 'User sign in' : 'Partner sign in'}
-        </h1>
-        <p style={{ marginBottom: 20 }}>
-          {role === 'user'
-            ? 'Access your addresses and permissions.'
-            : 'Access your partner dashboard.'}
-        </p>
-        <form onSubmit={submit}>
-          <div className="field" style={{ textAlign: 'left' }}>
-            <label>Username</label>
-            <input
-              autoFocus
-              value={username}
-              onChange={(e) => {
-                setUsername(e.target.value)
-                setError(false)
-              }}
-              placeholder="admin"
-            />
-          </div>
-          <div className="field" style={{ textAlign: 'left' }}>
-            <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value)
-                setError(false)
-              }}
-              placeholder="admin"
-            />
-          </div>
-          {error && (
-            <div className="login-error">
-              Invalid credentials. Try <strong>admin</strong> /{' '}
-              <strong>admin</strong>.
-            </div>
-          )}
-          <button className="btn primary block" type="submit">
-            Sign in
-          </button>
-        </form>
-        <div className="login-hint">
-          Username <code>admin</code> · password <code>admin</code>
-        </div>
-        <button className="link-btn" style={{ marginTop: 16 }} onClick={onBack}>
-          ← Back
-        </button>
       </div>
     </div>
   )
