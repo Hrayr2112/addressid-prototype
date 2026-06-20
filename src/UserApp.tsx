@@ -699,13 +699,16 @@ function SharingsList({ onOpen }: { onOpen: (id: string) => void }) {
     const map = new Map<string, Access[]>()
     for (const acc of store.accesses) {
       if (acc.status !== 'active') continue
-      const key = acc.physicalAddressId ?? acc.mailingAddressId ?? 'unknown'
+      // Only the user's own sharings — i.e. accesses tied to a real address in
+      // this user's address book (skip synthetic org-side clients).
+      const key = acc.physicalAddressId ?? acc.mailingAddressId
+      if (!key || !store.addressById(key)) continue
       const list = map.get(key) ?? []
       list.push(acc)
       map.set(key, list)
     }
     return [...map.entries()]
-  }, [store.accesses])
+  }, [store.accesses, store])
 
   if (groups.length === 0)
     return <div className="empty">You are not sharing any address right now.</div>
