@@ -466,7 +466,8 @@ h4 {
 }
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  /* minmax(0, 1fr) lets columns shrink so fields (e.g. ZIP) never overflow */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 0 14px;
 }
 .seg {
