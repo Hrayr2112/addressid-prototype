@@ -40,6 +40,32 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
+  /* Always show the arrow cursor over plain text/content. */
+  cursor: default;
+}
+
+/* Interactive elements still get the pointer; text fields get the caret. */
+button,
+a,
+select,
+label.checkbox,
+.nav-item,
+.clickable,
+.choice,
+.mode-panel,
+.seg-toggle button,
+.link-btn,
+.back-link {
+  cursor: pointer;
+}
+input,
+textarea {
+  cursor: text;
+}
+input[type='checkbox'],
+input[type='radio'],
+input[type='datetime-local'] {
+  cursor: pointer;
 }
 
 button {
@@ -414,6 +440,9 @@ h4 {
   font-weight: 600;
   color: var(--text-soft);
 }
+.field {
+  min-width: 0;
+}
 .field input,
 .field select {
   font-family: inherit;
@@ -424,6 +453,10 @@ h4 {
   background: var(--surface);
   color: var(--text);
   outline: none;
+  /* allow inputs to shrink inside the grid so fields like ZIP never overflow */
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .field input:focus,
@@ -768,6 +801,32 @@ h4 {
 }
 .pill-count.amber {
   background: var(--amber);
+}
+.searchbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.search-input {
+  flex: 1;
+  min-width: 220px;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.search-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.seg-toggle .pill-count {
+  margin-left: 7px;
 }
 .mini-tag {
   font-size: 10.5px;

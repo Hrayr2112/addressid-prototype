@@ -6,19 +6,45 @@ import {
   ORG_NAME,
   useStore,
 } from './store'
-import type { Access, AddressType } from './types'
+import type { Access, AccessRequest, AddressType } from './types'
 import { AccessStatusBadge, Modal, Timeline, formatDate, typeLabel } from './ui'
 import { Checkbox } from './UserApp'
 
-type View = 'home' | 'newrequest' | 'shared' | 'action' | 'changes' | 'account'
+type View = 'notifications' | 'newrequest' | 'share' | 'action' | 'pending' | 'account'
+type ActionTab = 'new' | 'snoozed' | 'closed'
+type SearchMode = 'name' | 'userid'
 
 function isSnoozed(acc: Access) {
   return acc.snoozedUntil != null && new Date(acc.snoozedUntil) > new Date()
 }
 
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString('en-US', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function matchClient(a: Access, q: string, mode: SearchMode) {
+  if (!q.trim()) return true
+  const s = q.toLowerCase()
+  return mode === 'userid'
+    ? a.orgInternalUserId.toLowerCase().includes(s)
+    : a.personName.toLowerCase().includes(s)
+}
+
+function addrOf(store: ReturnType<typeof useStore>, acc: Access) {
+  const a = store.addressById(acc.physicalAddressId ?? acc.mailingAddressId)
+  if (a) return `${a.line}${a.unit ? ', ' + a.unit : ''}, ${a.city} ${a.state}`
+  return acc.addressLabel ?? '—'
+}
+
 export function OrgApp({ onSignOut }: { onSignOut: () => void }) {
   const store = useStore()
-  const [view, setView] = useState<View>('home')
+  const [view, setView] = useState<View>('notifications')
   const [openAccess, setOpenAccess] = useState<string | null>(null)
 
   const mine = store.accesses.filter((a) => a.orgName === ORG_NAME)
@@ -26,14 +52,17 @@ export function OrgApp({ onSignOut }: { onSignOut: () => void }) {
   const pending = store.requests.filter(
     (r) => r.orgName === ORG_NAME && r.status === 'pending',
   )
-  const actionItems = mine.filter(
-    (a) => a.status === 'inactive' && !isSnoozed(a),
-  )
+  const newAction = mine.filter((a) => a.status === 'inactive' && !isSnoozed(a))
   const unreadChanges = store.changes.filter((c) => !c.read).length
 
   function go(v: View) {
     setView(v)
     setOpenAccess(null)
+  }
+
+  function openClient(id: string) {
+    setOpenAccess(id)
+    setView('share')
   }
 
   const detail = mine.find((a) => a.id === openAccess)
@@ -49,11 +78,11 @@ export function OrgApp({ onSignOut }: { onSignOut: () => void }) {
             <div className="role">Organization dashboard</div>
           </div>
         </div>
-        <NavItem icon="📊" label="Overview" active={view === 'home'} onClick={() => go('home')} />
-        <NavItem icon="➕" label="New Request" active={view === 'newrequest'} count={pending.length || undefined} countTone="neutral" onClick={() => go('newrequest')} />
-        <NavItem icon="🔗" label="Shared" active={view === 'shared'} count={shared.length} countTone="neutral" onClick={() => go('shared')} />
-        <NavItem icon="⚠️" label="Action Required" active={view === 'action'} count={actionItems.length || undefined} onClick={() => go('action')} />
-        <NavItem icon="🕑" label="Recent Changes" active={view === 'changes'} count={unreadChanges || undefined} onClick={() => go('changes')} />
+        <NavItem icon="🔔" label="Notifications" active={view === 'notifications'} count={unreadChanges || undefined} onClick={() => go('notifications')} />
+        <NavItem icon="➕" label="New Request" active={view === 'newrequest'} onClick={() => go('newrequest')} />
+        <NavItem icon="🔗" label="Share" active={view === 'share'} count={shared.length} countTone="neutral" onClick={() => go('share')} />
+        <NavItem icon="⚠️" label="Action Required" active={view === 'action'} count={newAction.length || undefined} onClick={() => go('action')} />
+        <NavItem icon="🕓" label="Pending" active={view === 'pending'} count={pending.length || undefined} countTone="neutral" onClick={() => go('pending')} />
         <NavItem icon="🏢" label="My Account" active={view === 'account'} onClick={() => go('account')} />
         <div className="sidebar-foot">
           <NavItem icon="↩︎" label="Exit demo" onClick={onSignOut} />
@@ -64,16 +93,16 @@ export function OrgApp({ onSignOut }: { onSignOut: () => void }) {
         <div className="screen" key={screenKey}>
           {detail ? (
             <AccessDetail access={detail} onBack={() => setOpenAccess(null)} />
-          ) : view === 'home' ? (
-            <Home shared={shared.length} pending={pending.length} actionItems={actionItems.length} unreadChanges={unreadChanges} go={go} />
+          ) : view === 'notifications' ? (
+            <NotificationsView onOpenClient={openClient} onGo={go} />
           ) : view === 'newrequest' ? (
             <NewRequestView />
-          ) : view === 'shared' ? (
-            <SharedView accesses={shared} onOpen={setOpenAccess} />
+          ) : view === 'share' ? (
+            <ShareView accesses={shared} onOpen={openClient} />
           ) : view === 'action' ? (
-            <ActionRequiredView items={actionItems} onOpen={setOpenAccess} />
-          ) : view === 'changes' ? (
-            <ChangesView onGoAction={() => go('action')} />
+            <ActionRequiredView onOpen={openClient} />
+          ) : view === 'pending' ? (
+            <PendingView />
           ) : (
             <AccountView />
           )}
@@ -118,69 +147,103 @@ function NavItem({
   )
 }
 
-// ---- Home ------------------------------------------------------------------
+// ---- Search bar ------------------------------------------------------------
 
-function Home({
-  shared,
-  pending,
-  actionItems,
-  unreadChanges,
-  go,
+function SearchBar({
+  value,
+  onChange,
+  mode,
+  onMode,
 }: {
-  shared: number
-  pending: number
-  actionItems: number
-  unreadChanges: number
-  go: (v: View) => void
+  value: string
+  onChange: (v: string) => void
+  mode?: SearchMode
+  onMode?: (m: SearchMode) => void
 }) {
   return (
-    <>
-      <div className="page-head">
-        <h1>{ORG_NAME}</h1>
-        <p>An overview of your shared access and anything that needs attention.</p>
-      </div>
-      <div className="grid cols-2">
-        <Stat label="Active sharing" value={shared} tone="green" onClick={() => go('shared')} />
-        <Stat label="Pending requests" value={pending} tone="amber" onClick={() => go('newrequest')} />
-        <Stat label="Action required" value={actionItems} tone="red" onClick={() => go('action')} />
-        <Stat label="Unread changes" value={unreadChanges} tone="violet" onClick={() => go('changes')} />
-      </div>
-      <div className="section-title">Quick actions</div>
-      <div className="card">
-        <button className="btn primary" onClick={() => go('newrequest')}>
-          + New Request
-        </button>
-      </div>
-    </>
+    <div className="searchbar">
+      <input
+        className="search-input"
+        placeholder="Search…"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {mode && onMode && (
+        <div className="seg-toggle">
+          <button className={mode === 'name' ? 'on' : ''} onClick={() => onMode('name')}>
+            By name
+          </button>
+          <button className={mode === 'userid' ? 'on' : ''} onClick={() => onMode('userid')}>
+            By User ID
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
-function Stat({
-  label,
-  value,
-  tone,
-  onClick,
+// ---- Notifications (default) ----------------------------------------------
+
+function NotificationsView({
+  onOpenClient,
+  onGo,
 }: {
-  label: string
-  value: number
-  tone: 'green' | 'amber' | 'red' | 'violet'
-  onClick: () => void
+  onOpenClient: (id: string) => void
+  onGo: (v: View) => void
 }) {
-  const colors: Record<string, string> = {
-    green: 'var(--green)',
-    amber: 'var(--amber)',
-    red: 'var(--red)',
-    violet: 'var(--primary-dark)',
+  const store = useStore()
+  const [q, setQ] = useState('')
+  const list = store.changes.filter((c) =>
+    !q.trim() ? true : c.text.toLowerCase().includes(q.toLowerCase()),
+  )
+
+  function open(c: (typeof store.changes)[number]) {
+    store.markChangeRead(c.id)
+    if (c.accessId && store.accesses.some((a) => a.id === c.accessId)) {
+      onOpenClient(c.accessId)
+    } else if (c.section) {
+      onGo(c.section === 'action_required' ? 'action' : 'pending')
+    }
   }
+
   return (
-    <div className="card clickable" onClick={onClick}>
-      <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
-        {label}
+    <>
+      <div className="page-head row between">
+        <div>
+          <h1>Notifications</h1>
+          <p>A log of everything that happened. Click an item to open it.</p>
+        </div>
+        {store.changes.some((c) => !c.read) && (
+          <button className="link-btn" onClick={store.markAllChangesRead}>
+            Mark all as read
+          </button>
+        )}
       </div>
-      <div style={{ fontSize: 34, fontWeight: 800, color: colors[tone], marginTop: 6 }}>
-        {value}
+      <SearchBar value={q} onChange={setQ} />
+      <div className="grid" style={{ marginTop: 16 }}>
+        {list.length === 0 && <div className="empty">No notifications.</div>}
+        {list.map((c) => (
+          <div
+            key={c.id}
+            className={`notif clickable ${c.read ? '' : 'unread'}`}
+            onClick={() => open(c)}
+          >
+            {!c.read && <div className="unread-dot" />}
+            <div style={{ flex: 1 }}>
+              <div className="row between">
+                <strong style={{ fontWeight: 600 }}>{c.text}</strong>
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  {formatDate(c.date)}
+                </span>
+              </div>
+              <span className="link-btn" style={{ fontSize: 13 }}>
+                {c.accessId ? 'Open in Share →' : c.section === 'action_required' ? 'Go to Action Required →' : 'Open →'}
+              </span>
+            </div>
+          </div>
+        ))}
       </div>
-    </div>
+    </>
   )
 }
 
@@ -195,9 +258,6 @@ function NewRequestView() {
   const [mailing, setMailing] = useState(false)
   const [sent, setSent] = useState(false)
 
-  const pending = store.requests.filter(
-    (r) => r.orgName === ORG_NAME && r.status === 'pending',
-  )
   const valid = userId && firstName && lastName && (physical || mailing)
   const type: AddressType =
     physical && mailing ? 'both' : physical ? 'physical' : 'mailing'
@@ -213,12 +273,12 @@ function NewRequestView() {
         {sent && (
           <div className="banner violet">
             <span>✅</span>
-            <span>Request sent. It now appears in Pending below.</span>
+            <span>Request sent. You can track it under Pending.</span>
           </div>
         )}
         <div className="field">
           <label>User ID</label>
-          <input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="e.g. USR-2048" />
+          <input value={userId} onChange={(e) => setUserId(e.target.value)} />
         </div>
         <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
           <div className="field">
@@ -251,24 +311,46 @@ function NewRequestView() {
           Send request
         </button>
       </div>
+    </>
+  )
+}
 
-      <div className="section-title">Pending</div>
-      {pending.length === 0 ? (
-        <div className="empty">No requests are pending.</div>
+// ---- Share -----------------------------------------------------------------
+
+function ShareView({
+  accesses,
+  onOpen,
+}: {
+  accesses: Access[]
+  onOpen: (id: string) => void
+}) {
+  const [q, setQ] = useState('')
+  const [mode, setMode] = useState<SearchMode>('name')
+  const list = accesses.filter((a) => matchClient(a, q, mode))
+
+  return (
+    <>
+      <div className="page-head">
+        <h1>Share</h1>
+        <p>Address information currently shared with you ({accesses.length}).</p>
+      </div>
+      <SearchBar value={q} onChange={setQ} mode={mode} onMode={setMode} />
+      {list.length === 0 ? (
+        <div className="empty" style={{ marginTop: 16 }}>
+          No clients match your search.
+        </div>
       ) : (
-        <div className="grid">
-          {pending.map((r) => (
-            <div className="card" key={r.id}>
+        <div className="grid" style={{ marginTop: 16 }}>
+          {list.map((acc) => (
+            <div className="card clickable" key={acc.id} onClick={() => onOpen(acc.id)}>
               <div className="row between">
-                <div className="stack">
-                  <strong>
-                    {r.firstName} {r.lastName}
-                  </strong>
-                  <span className="muted" style={{ fontSize: 13 }}>
-                    {r.userId} · {typeLabel(r.requestType)} · {formatDate(r.sentAt)}
+                <div className="stack" style={{ gap: 2 }}>
+                  <strong>{acc.personName}</strong>
+                  <span className="muted" style={{ fontSize: 12.5 }}>
+                    {acc.orgInternalUserId}
                   </span>
                 </div>
-                <span className="badge amber">Pending</span>
+                <AccessStatusBadge status={acc.status} />
               </div>
             </div>
           ))}
@@ -278,78 +360,14 @@ function NewRequestView() {
   )
 }
 
-// ---- Shared ----------------------------------------------------------------
-
-function SharedView({
-  accesses,
-  onOpen,
-}: {
-  accesses: Access[]
-  onOpen: (id: string) => void
-}) {
-  return (
-    <>
-      <div className="page-head">
-        <h1>Shared</h1>
-        <p>Address information currently shared with you.</p>
-      </div>
-      {accesses.length === 0 ? (
-        <div className="empty">Nothing is shared with you yet.</div>
-      ) : (
-        <div className="grid">
-          {accesses.map((acc) => (
-            <AccessRow key={acc.id} access={acc} onOpen={onOpen} />
-          ))}
-        </div>
-      )}
-    </>
-  )
-}
-
-function AccessRow({
-  access,
-  onOpen,
-}: {
-  access: Access
-  onOpen: (id: string) => void
-}) {
-  const store = useStore()
-  const addr = store.addressById(access.physicalAddressId ?? access.mailingAddressId)
-  return (
-    <div className="card clickable" onClick={() => onOpen(access.id)}>
-      <div className="row between">
-        <div className="stack">
-          <strong>{access.personName}</strong>
-          <span className="muted" style={{ fontSize: 12.5 }}>
-            ID: {access.orgInternalUserId}
-          </span>
-        </div>
-        <AccessStatusBadge status={access.status} />
-      </div>
-      <div className="divider" />
-      <div className="row between wrap">
-        <span className="addr-sub">
-          {addr ? `${addr.line}, ${addr.city} ${addr.state}` : '—'}
-        </span>
-        <span className="tag">{typeLabel(access.requestType)}</span>
-      </div>
-      <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>
-        Since {formatDate(access.createdAt)}
-      </div>
-    </div>
-  )
-}
-
 // ---- Access detail ---------------------------------------------------------
 
 function AccessDetail({ access, onBack }: { access: Access; onBack: () => void }) {
   const store = useStore()
-  const phys = store.addressById(access.physicalAddressId)
-  const mail = store.addressById(access.mailingAddressId)
   return (
     <>
       <button className="back-link" onClick={onBack}>
-        ← Back to Shared
+        ← Back
       </button>
       <div className="card">
         <div className="row between">
@@ -374,18 +392,8 @@ function AccessDetail({ access, onBack }: { access: Access; onBack: () => void }
         <div className="kv">
           <span className="k">Type</span>
           <span className="v">{typeLabel(access.requestType)}</span>
-          {phys && (
-            <>
-              <span className="k">Physical address</span>
-              <span className="v">{phys.line}, {phys.city} {phys.state} {phys.zip}</span>
-            </>
-          )}
-          {mail && (
-            <>
-              <span className="k">Mailing address</span>
-              <span className="v">{mail.line}, {mail.city} {mail.state} {mail.zip}</span>
-            </>
-          )}
+          <span className="k">Address</span>
+          <span className="v">{addrOf(store, access)}</span>
           <span className="k">Since</span>
           <span className="v">{formatDate(access.createdAt)}</span>
           <span className="k">Status</span>
@@ -404,15 +412,21 @@ function AccessDetail({ access, onBack }: { access: Access; onBack: () => void }
 
 // ---- Action Required -------------------------------------------------------
 
-function ActionRequiredView({
-  items,
-  onOpen,
-}: {
-  items: Access[]
-  onOpen: (id: string) => void
-}) {
+function ActionRequiredView({ onOpen }: { onOpen: (id: string) => void }) {
   const store = useStore()
+  const [tab, setTab] = useState<ActionTab>('new')
+  const [q, setQ] = useState('')
+  const [mode, setMode] = useState<SearchMode>('name')
   const [requestFor, setRequestFor] = useState<Access | null>(null)
+  const [snoozeFor, setSnoozeFor] = useState<Access | null>(null)
+
+  const mine = store.accesses.filter((a) => a.orgName === ORG_NAME)
+  const newItems = mine.filter((a) => a.status === 'inactive' && !isSnoozed(a))
+  const snoozedItems = mine.filter((a) => a.status === 'inactive' && isSnoozed(a))
+  const closedItems = mine.filter((a) => a.status === 'closed')
+
+  const source = tab === 'new' ? newItems : tab === 'snoozed' ? snoozedItems : closedItems
+  const list = source.filter((a) => matchClient(a, q, mode))
 
   return (
     <>
@@ -420,62 +434,131 @@ function ActionRequiredView({
         <h1>Action Required</h1>
         <p>Sharing that needs your attention.</p>
       </div>
-      {items.length === 0 ? (
-        <div className="empty">Nothing needs action right now 🎉</div>
+
+      <div className="seg-toggle" style={{ marginBottom: 14 }}>
+        <button className={tab === 'new' ? 'on' : ''} onClick={() => setTab('new')}>
+          New{newItems.length > 0 && <span className="pill-count">{newItems.length}</span>}
+        </button>
+        <button className={tab === 'snoozed' ? 'on' : ''} onClick={() => setTab('snoozed')}>
+          Snoozed{snoozedItems.length > 0 && <span className="pill-count amber">{snoozedItems.length}</span>}
+        </button>
+        <button className={tab === 'closed' ? 'on' : ''} onClick={() => setTab('closed')}>
+          Closed
+        </button>
+      </div>
+
+      <SearchBar value={q} onChange={setQ} mode={mode} onMode={setMode} />
+
+      {list.length === 0 ? (
+        <div className="empty" style={{ marginTop: 16 }}>Nothing here.</div>
       ) : (
-        <div className="grid">
-          {items.map((acc) => {
-            const addr = store.addressById(acc.physicalAddressId ?? acc.mailingAddressId)
-            return (
-              <div className="card" key={acc.id}>
-                <div className="row between">
-                  <div className="stack" style={{ cursor: 'pointer' }} onClick={() => onOpen(acc.id)}>
-                    <strong>{acc.personName}</strong>
-                    <span className="muted" style={{ fontSize: 13 }}>
-                      {acc.orgInternalUserId} · {typeLabel(acc.requestType)}
-                    </span>
-                  </div>
-                  <span className="badge red">Inactive</span>
-                </div>
-                <div className="banner amber" style={{ marginTop: 14, marginBottom: 14 }}>
-                  <span>⚠️</span>
-                  <span>
-                    Status changed to Inactive. Last known address:{' '}
-                    {addr ? `${addr.line}, ${addr.city}` : '—'}.
+        <div className="grid" style={{ marginTop: 16 }}>
+          {list.map((acc) => (
+            <div className="card" key={acc.id}>
+              <div className="row between">
+                <div className="stack" style={{ cursor: 'pointer' }} onClick={() => onOpen(acc.id)}>
+                  <strong>{acc.personName}</strong>
+                  <span className="muted" style={{ fontSize: 13 }}>
+                    {acc.orgInternalUserId} · {typeLabel(acc.requestType)}
                   </span>
                 </div>
-                <div className="row wrap">
-                  <button className="btn primary sm" onClick={() => setRequestFor(acc)}>
-                    Request new access
-                  </button>
-                  <button
-                    className="btn ghost sm"
-                    onClick={() => {
-                      store.snoozeAccess(acc.id, 7)
-                      alert('Reminder set for 7 days. Removed from Action Required.')
-                    }}
-                  >
-                    Snooze 7 days
-                  </button>
-                  <button
-                    className="btn danger sm"
-                    onClick={() => {
-                      if (confirm('Close this access permanently?')) store.closeAccess(acc.id)
-                    }}
-                  >
-                    Close access
-                  </button>
-                </div>
+                <AccessStatusBadge status={acc.status} />
               </div>
-            )
-          })}
+
+              {tab === 'snoozed' && acc.snoozedUntil && (
+                <div className="banner violet" style={{ marginTop: 12, marginBottom: 0 }}>
+                  <span>⏰</span>
+                  <span>Reminder set for {formatDateTime(acc.snoozedUntil)}.</span>
+                </div>
+              )}
+
+              {tab !== 'closed' && (
+                <>
+                  <div className="banner amber" style={{ marginTop: 12, marginBottom: 14 }}>
+                    <span>⚠️</span>
+                    <span>Last known address: {addrOf(store, acc)}.</span>
+                  </div>
+                  <div className="row wrap">
+                    <button className="btn primary sm" onClick={() => setRequestFor(acc)}>
+                      Request new access
+                    </button>
+                    {tab === 'new' ? (
+                      <button className="btn ghost sm" onClick={() => setSnoozeFor(acc)}>
+                        Snooze
+                      </button>
+                    ) : (
+                      <button className="btn ghost sm" onClick={() => store.unsnoozeAccess(acc.id)}>
+                        Resume
+                      </button>
+                    )}
+                    <button
+                      className="btn danger sm"
+                      onClick={() => {
+                        if (confirm('Close this access permanently?')) store.closeAccess(acc.id)
+                      }}
+                    >
+                      Close access
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {tab === 'closed' && (
+                <div className="muted" style={{ fontSize: 12.5, marginTop: 10 }}>
+                  Closed · last known address: {addrOf(store, acc)}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
       {requestFor && (
         <RequestNewModal access={requestFor} onClose={() => setRequestFor(null)} />
       )}
+      {snoozeFor && (
+        <SnoozeModal access={snoozeFor} onClose={() => setSnoozeFor(null)} />
+      )}
     </>
+  )
+}
+
+function SnoozeModal({ access, onClose }: { access: Access; onClose: () => void }) {
+  const store = useStore()
+  // default: tomorrow 09:00, formatted for datetime-local input
+  const def = (() => {
+    const d = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    d.setHours(9, 0, 0, 0)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  })()
+  const [when, setWhen] = useState(def)
+  return (
+    <Modal
+      title="Snooze reminder"
+      subtitle={`${access.personName} · ${access.orgInternalUserId}`}
+      onClose={onClose}
+    >
+      <div className="field">
+        <label>Remind me on</label>
+        <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+      </div>
+      <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <button className="btn ghost" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          className="btn primary"
+          disabled={!when}
+          onClick={() => {
+            store.snoozeAccess(access.id, new Date(when).toISOString())
+            onClose()
+          }}
+        >
+          Set reminder
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -507,7 +590,7 @@ function RequestNewModal({ access, onClose }: { access: Access; onClose: () => v
       </div>
       <div className="field">
         <label>User ID</label>
-        <input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="e.g. USR-2048" />
+        <input value={userId} onChange={(e) => setUserId(e.target.value)} />
       </div>
       <div className="field">
         <label>What to request</label>
@@ -526,7 +609,7 @@ function RequestNewModal({ access, onClose }: { access: Access; onClose: () => v
           onClick={() => {
             store.sendRequest({ userId, firstName: first, lastName: last, requestType: type })
             onClose()
-            alert('New request sent. See Pending under New Request.')
+            alert('New request sent. See Pending.')
           }}
         >
           Send request
@@ -536,56 +619,50 @@ function RequestNewModal({ access, onClose }: { access: Access; onClose: () => v
   )
 }
 
-// ---- Recent Changes --------------------------------------------------------
+// ---- Pending ---------------------------------------------------------------
 
-function ChangesView({ onGoAction }: { onGoAction: () => void }) {
+function PendingView() {
   const store = useStore()
+  const [q, setQ] = useState('')
+  const [mode, setMode] = useState<SearchMode>('name')
+  const pending = store.requests.filter(
+    (r) => r.orgName === ORG_NAME && r.status === 'pending',
+  )
+  const match = (r: AccessRequest) => {
+    if (!q.trim()) return true
+    const s = q.toLowerCase()
+    return mode === 'userid'
+      ? r.userId.toLowerCase().includes(s)
+      : `${r.firstName} ${r.lastName}`.toLowerCase().includes(s)
+  }
+  const list = pending.filter(match)
+
   return (
     <>
-      <div className="page-head row between">
-        <div>
-          <h1>Recent Changes</h1>
-          <p>Updates across your shared access.</p>
-        </div>
-        {store.changes.some((c) => !c.read) && (
-          <button className="link-btn" onClick={store.markAllChangesRead}>
-            Mark all as read
-          </button>
-        )}
+      <div className="page-head">
+        <h1>Pending</h1>
+        <p>Requests waiting for the user to approve.</p>
       </div>
-      <div className="grid">
-        {store.changes.length === 0 && <div className="empty">No changes.</div>}
-        {store.changes.map((c) => (
-          <div
-            key={c.id}
-            className={`notif ${c.read ? '' : 'unread'}`}
-            onClick={() => store.markChangeRead(c.id)}
-          >
-            {!c.read && <div className="unread-dot" />}
-            <div style={{ flex: 1 }}>
+      <SearchBar value={q} onChange={setQ} mode={mode} onMode={setMode} />
+      {list.length === 0 ? (
+        <div className="empty" style={{ marginTop: 16 }}>No pending requests.</div>
+      ) : (
+        <div className="grid" style={{ marginTop: 16 }}>
+          {list.map((r) => (
+            <div className="card" key={r.id}>
               <div className="row between">
-                <strong style={{ fontWeight: 600 }}>{c.text}</strong>
-                <span className="muted" style={{ fontSize: 12.5 }}>
-                  {formatDate(c.date)}
-                </span>
+                <div className="stack">
+                  <strong>{r.firstName} {r.lastName}</strong>
+                  <span className="muted" style={{ fontSize: 13 }}>
+                    {r.userId} · {typeLabel(r.requestType)} · {formatDate(r.sentAt)}
+                  </span>
+                </div>
+                <span className="badge amber">Pending</span>
               </div>
-              {c.link === 'action_required' && (
-                <button
-                  className="link-btn"
-                  style={{ marginTop: 6 }}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    store.markChangeRead(c.id)
-                    onGoAction()
-                  }}
-                >
-                  Go to Action Required →
-                </button>
-              )}
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </>
   )
 }

@@ -109,7 +109,7 @@ const seedAccesses: Access[] = [
 const seedRequests: AccessRequest[] = [
   {
     id: 'REQ-301',
-    orgName: 'Evergreen Insurance',
+    orgName: 'Coastal Trust Bank',
     firstName: USER_FIRST,
     lastName: USER_LAST,
     userId: USER_ID,
@@ -124,8 +124,8 @@ const seedNotifications: UserNotification[] = [
     id: uid('N'),
     kind: 'request',
     title: 'New request',
-    body: 'Evergreen Insurance requests Physical + Mailing.',
-    orgName: 'Evergreen Insurance',
+    body: 'Coastal Trust Bank requests Physical + Mailing.',
+    orgName: 'Coastal Trust Bank',
     requestId: 'REQ-301',
     date: daysAgo(1),
     read: false,
@@ -160,9 +160,87 @@ const seedPreviousSharings: PreviousSharing[] = [
   },
 ]
 
+// ---- Synthetic organization client roster ---------------------------------
+
+const FIRST_NAMES = [
+  'James', 'Mary', 'Robert', 'Patricia', 'John', 'Jennifer', 'Michael', 'Linda',
+  'William', 'Elizabeth', 'David', 'Barbara', 'Richard', 'Susan', 'Joseph',
+  'Jessica', 'Thomas', 'Sarah', 'Charles', 'Karen', 'Christopher', 'Nancy',
+  'Daniel', 'Lisa', 'Matthew', 'Betty', 'Anthony', 'Margaret', 'Mark', 'Sandra',
+  'Donald', 'Ashley', 'Steven', 'Kimberly', 'Andrew', 'Donna', 'Joshua', 'Carol',
+  'Kenneth', 'Michelle', 'Kevin', 'Amanda', 'Brian', 'Melissa', 'George', 'Deborah',
+]
+const LAST_NAMES = [
+  'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis',
+  'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson',
+  'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson', 'White',
+  'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Robinson', 'Walker', 'Young',
+  'Allen', 'King', 'Wright', 'Scott', 'Torres', 'Nguyen', 'Hill', 'Flores', 'Green',
+]
+const STREETS = ['Maple Ave', 'Oak St', 'Pine Rd', 'Cedar Ln', 'Elm St', 'Park Blvd', 'Lake Dr', 'Hill St', 'River Rd', 'Sunset Blvd', 'Main St', 'Washington Ave']
+const PLACES = [
+  ['Denver', 'CO'], ['Seattle', 'WA'], ['Austin', 'TX'], ['Boston', 'MA'],
+  ['Portland', 'OR'], ['Miami', 'FL'], ['Phoenix', 'AZ'], ['Atlanta', 'GA'],
+  ['Chicago', 'IL'], ['Dallas', 'TX'], ['Columbus', 'OH'], ['Nashville', 'TN'],
+]
+
+let clientSeq = 0
+function makeClient(
+  status: Access['status'],
+  opts: { snoozed?: boolean } = {},
+): Access {
+  const n = clientSeq++
+  const first = FIRST_NAMES[n % FIRST_NAMES.length]
+  const last = LAST_NAMES[(n * 5) % LAST_NAMES.length]
+  const [city, st] = PLACES[n % PLACES.length]
+  const rt = (['physical', 'mailing', 'both'] as AddressType[])[n % 3]
+  const addressLabel = `${120 + n * 4} ${STREETS[n % STREETS.length]}, ${city}, ${st}`
+  const history: Access['history'] = [
+    { id: uid('H'), date: daysAgo(60 + n), type: 'Request sent' },
+    { id: uid('H'), date: daysAgo(58 + n), type: 'Approved' },
+    { id: uid('H'), date: daysAgo(58 + n), type: 'Status changed', status: 'Active' },
+  ]
+  if (status === 'inactive')
+    history.push({ id: uid('H'), date: daysAgo(3 + (n % 9)), type: 'Status changed', status: 'Inactive' })
+  if (status === 'closed') {
+    history.push({ id: uid('H'), date: daysAgo(20 + (n % 10)), type: 'Status changed', status: 'Inactive' })
+    history.push({ id: uid('H'), date: daysAgo(10 + (n % 8)), type: 'Access closed' })
+  }
+  return {
+    id: `ACC-${700 + n}`,
+    orgName: ORG_NAME,
+    personName: `${first} ${last}`,
+    orgInternalUserId: `NB-${1000 + n}`,
+    requestType: rt,
+    addressLabel,
+    status,
+    createdAt: daysAgo(58 + n),
+    history,
+    snoozedUntil: opts.snoozed ? daysFromNow(4 + (n % 6)) : undefined,
+  }
+}
+
+const activeClients = Array.from({ length: 25 }, () => makeClient('active'))
+const newActionClients = Array.from({ length: 10 }, () => makeClient('inactive'))
+const snoozedClients = Array.from({ length: 3 }, () => makeClient('inactive', { snoozed: true }))
+const closedClients = Array.from({ length: 6 }, () => makeClient('closed'))
+
+const generatedClients = [
+  ...activeClients,
+  ...newActionClients,
+  ...snoozedClients,
+  ...closedClients,
+]
+
+// Organization Notifications log — every entry links to a client or a section.
 const seedChanges: OrgChange[] = [
-  { id: uid('C'), text: 'Status changed to Inactive — NB-3380', date: daysAgo(6), read: false, link: 'action_required' },
-  { id: uid('C'), text: 'New access approved — NB-7741', date: daysAgo(40), read: true },
+  { id: uid('C'), text: `Status changed to Inactive — ${newActionClients[0].personName}`, date: daysAgo(1), read: false, accessId: newActionClients[0].id, section: 'action_required' },
+  { id: uid('C'), text: `Status changed to Inactive — ${newActionClients[1].personName}`, date: daysAgo(2), read: false, accessId: newActionClients[1].id, section: 'action_required' },
+  { id: uid('C'), text: `New access approved — ${activeClients[0].personName}`, date: daysAgo(3), read: false, accessId: activeClients[0].id },
+  { id: uid('C'), text: 'Status changed to Inactive — NB-3380', date: daysAgo(6), read: true, accessId: 'ACC-503', section: 'action_required' },
+  { id: uid('C'), text: `Address updated — ${activeClients[1].personName}`, date: daysAgo(8), read: true, accessId: activeClients[1].id },
+  { id: uid('C'), text: `Access closed — ${closedClients[0].personName}`, date: daysAgo(10), read: true, accessId: closedClients[0].id },
+  { id: uid('C'), text: 'New access approved — NB-7741', date: daysAgo(40), read: true, accessId: 'ACC-501' },
 ]
 
 // ---- Store -----------------------------------------------------------------
@@ -202,7 +280,8 @@ interface Store {
     lastName: string
     requestType: AddressType
   }) => void
-  snoozeAccess: (accessId: string, days: number) => void
+  snoozeAccess: (accessId: string, untilIso: string) => void
+  unsnoozeAccess: (accessId: string) => void
   closeAccess: (accessId: string) => void
   markChangeRead: (id: string) => void
   markAllChangesRead: () => void
@@ -214,7 +293,10 @@ const StoreContext = createContext<Store | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [addresses, setAddresses] = useState<Address[]>(seedAddresses)
-  const [accesses, setAccesses] = useState<Access[]>(seedAccesses)
+  const [accesses, setAccesses] = useState<Access[]>([
+    ...seedAccesses,
+    ...generatedClients,
+  ])
   const [requests, setRequests] = useState<AccessRequest[]>(seedRequests)
   const [notifications, setNotifications] =
     useState<UserNotification[]>(seedNotifications)
@@ -228,10 +310,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const pushChangeForOrg = useCallback(
-    (orgName: string, text: string, link?: OrgChange['link']) => {
+    (
+      orgName: string,
+      text: string,
+      opts?: { accessId?: string; section?: OrgChange['section'] },
+    ) => {
       if (orgName !== ORG_NAME) return
       setChanges((prev) => [
-        { id: uid('C'), text, date: now(), read: false, link },
+        {
+          id: uid('C'),
+          text,
+          date: now(),
+          read: false,
+          accessId: opts?.accessId,
+          section: opts?.section,
+        },
         ...prev,
       ])
     },
@@ -316,7 +409,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
       pushChangeForOrg(
         req.orgName,
-        `New access approved — ${newAccess.orgInternalUserId}`,
+        `New access approved — ${newAccess.personName}`,
+        { accessId: newAccess.id },
       )
     },
     [notify, pushChangeForOrg],
@@ -357,7 +451,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               })
           }
           setPreviousSharings((p) => [...entries, ...p])
-          pushChangeForOrg(acc.orgName, `Sharing stopped — ${acc.orgInternalUserId}`)
+          pushChangeForOrg(acc.orgName, `Sharing stopped — ${acc.personName}`, { accessId: acc.id })
           return {
             ...acc,
             status: 'stopped',
@@ -399,7 +493,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           )
             entries.push({ id: uid('P'), addressId: acc.mailingAddressId, orgName: acc.orgName, requestType: acc.requestType, date: now(), reason: 'changed' })
           if (entries.length) setPreviousSharings((p) => [...entries, ...p])
-          pushChangeForOrg(acc.orgName, `Address updated — ${acc.orgInternalUserId}`)
+          pushChangeForOrg(acc.orgName, `Address updated — ${acc.personName}`, { accessId: acc.id })
           return {
             ...acc,
             physicalAddressId: newPhys,
@@ -440,8 +534,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ])
           pushChangeForOrg(
             acc.orgName,
-            `Status changed to Inactive — ${acc.orgInternalUserId}`,
-            'action_required',
+            `Status changed to Inactive — ${acc.personName}`,
+            { accessId: acc.id, section: 'action_required' },
           )
           return {
             ...acc,
@@ -493,10 +587,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [notify],
   )
 
-  const snoozeAccess: Store['snoozeAccess'] = useCallback((accessId, days) => {
+  const snoozeAccess: Store['snoozeAccess'] = useCallback((accessId, untilIso) => {
     setAccesses((prev) =>
       prev.map((acc) =>
-        acc.id === accessId ? { ...acc, snoozedUntil: daysFromNow(days) } : acc,
+        acc.id === accessId ? { ...acc, snoozedUntil: untilIso } : acc,
+      ),
+    )
+  }, [])
+
+  const unsnoozeAccess: Store['unsnoozeAccess'] = useCallback((accessId) => {
+    setAccesses((prev) =>
+      prev.map((acc) =>
+        acc.id === accessId ? { ...acc, snoozedUntil: null } : acc,
       ),
     )
   }, [])
@@ -504,10 +606,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const closeAccess: Store['closeAccess'] = useCallback(
     (accessId) => {
       let orgName = ''
+      let personName = ''
       setAccesses((prev) =>
         prev.map((acc) => {
           if (acc.id !== accessId) return acc
           orgName = acc.orgName
+          personName = acc.personName
           return {
             ...acc,
             status: 'closed',
@@ -518,7 +622,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
         }),
       )
-      pushChangeForOrg(orgName, 'Access closed')
+      pushChangeForOrg(orgName, `Access closed — ${personName}`, { accessId })
     },
     [pushChangeForOrg],
   )
@@ -549,6 +653,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       markAllNotificationsRead,
       sendRequest,
       snoozeAccess,
+      unsnoozeAccess,
       closeAccess,
       markChangeRead,
       markAllChangesRead,
@@ -571,6 +676,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       markAllNotificationsRead,
       sendRequest,
       snoozeAccess,
+      unsnoozeAccess,
       closeAccess,
       markChangeRead,
       markAllChangesRead,

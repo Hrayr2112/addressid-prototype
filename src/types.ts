@@ -41,6 +41,9 @@ export interface Access {
   requestType: AddressType
   physicalAddressId?: string
   mailingAddressId?: string
+  // Denormalized last-known address text (used for synthetic org-side clients
+  // whose address does not live in this user's address book).
+  addressLabel?: string
   status: AccessStatus
   createdAt: string
   history: HistoryEvent[]
@@ -81,10 +84,13 @@ export interface UserNotification {
   read: boolean
 }
 
+// An entry in the organization's Notifications log. Each one links either to
+// a specific client (accessId, opens in Share) or to a section.
 export interface OrgChange {
   id: string
   text: string
   date: string
   read: boolean
-  link?: 'action_required'
+  accessId?: string
+  section?: 'action_required' | 'pending'
 }
