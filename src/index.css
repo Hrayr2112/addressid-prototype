@@ -664,6 +664,84 @@ h4 {
   border-radius: 9px;
 }
 
+/* ---------- Onboarding ---------- */
+.onb-card {
+  width: 100%;
+  max-width: 540px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  box-shadow: var(--shadow-md);
+  padding: 32px 40px 36px;
+  display: flex;
+  flex-direction: column;
+}
+.onb-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.onb-body {
+  text-align: center;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  animation: screenIn 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.onb-icon {
+  width: 88px;
+  height: 88px;
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  font-size: 42px;
+  margin-bottom: 24px;
+}
+.onb-title {
+  font-size: 26px;
+  line-height: 1.2;
+  margin-bottom: 14px;
+  max-width: 420px;
+}
+.onb-text {
+  color: var(--text-soft);
+  font-size: 15.5px;
+  line-height: 1.55;
+  max-width: 440px;
+  margin: 0;
+}
+.onb-dots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 26px 0 22px;
+}
+.onb-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: none;
+  background: var(--border);
+  padding: 0;
+  transition: width 0.2s, background 0.2s;
+}
+.onb-dot.on {
+  width: 26px;
+  background: var(--primary);
+}
+.onb-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.onb-actions .btn {
+  min-width: 120px;
+}
+
 /* ---------- Intro (mode selection) ---------- */
 .intro-wrap {
   width: 100%;

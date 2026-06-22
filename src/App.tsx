@@ -1,16 +1,20 @@
 import { useState } from 'react'
 import { UserApp } from './UserApp'
 import { OrgApp } from './PartnerApp'
+import { Onboarding } from './Onboarding'
 import { BRAND_NAME } from './store'
 
-type Stage = 'intro' | 'user' | 'organization'
+type Stage = 'onboarding' | 'choose' | 'user' | 'organization'
 
 export function App() {
-  const [stage, setStage] = useState<Stage>('intro')
+  const [stage, setStage] = useState<Stage>('onboarding')
 
-  if (stage === 'user') return <UserApp onSignOut={() => setStage('intro')} />
+  if (stage === 'user') return <UserApp onSignOut={() => setStage('choose')} />
   if (stage === 'organization')
-    return <OrgApp onSignOut={() => setStage('intro')} />
+    return <OrgApp onSignOut={() => setStage('choose')} />
+
+  if (stage === 'onboarding')
+    return <Onboarding onDone={() => setStage('choose')} />
 
   return (
     <div className="intro">
